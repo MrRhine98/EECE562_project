@@ -30,14 +30,21 @@ class HMM(object):
 		for i in range(length):
 			observation = chroma[:, i]
 			new_alpha = np.zeros(last_alpha.shape)
+			b = np.zeros(self.nstate)
+			for g in range(self.nstate):
+				b[g] = self._get_gaussian(observation, g)
+			b /= np.sum(b)
 			for j in range(self.nstate):
-				gaussian = self._get_gaussian(observation, j) 
-				new_alpha[j] = last_alpha.dot(self.P[:, j]) * gaussian
+				new_alpha[j] = last_alpha.dot(self.P[:, j]) * b[j]
 			# normalization
 			norm[i] = sum(new_alpha)
 			new_alpha /= norm[i]
 			alpha.append(new_alpha)
 			last_alpha = new_alpha
+		print("*"*30)
+		#print("sum of alpha")
+		#for a in alpha:
+		#	print(sum(a))
 		return norm, alpha
 
 	def _backward(self, chroma, norm):
@@ -48,17 +55,25 @@ class HMM(object):
 		for l in range(length-1):		
 			t = length - l - 1
 			observation = chroma[:, t]
+			new_beta = np.zeros(last_beta.shape)
 			for i in range(self.nstate):
-				new_beta = np.zeros(last_beta.shape)
 				b = np.zeros(self.nstate)
 				for g in range(self.nstate):
 					b[g] = self._get_gaussian(observation, g)
+				b /= np.sum(b)
+				#print(b)
+				#print(self.P[i, :])
+				#print(last_beta)
 				new_beta[i] = sum(last_beta * self.P[i, :] * b)
+				#print(new_beta)
+				#input()
 			new_beta /= norm[t-1]
-			# print(new_beta)
 			beta.append(new_beta)
 			last_beta = new_beta
 		beta.reverse()
+		print("beta start")
+		print(beta)
+		print("beta ends")	
 		return beta	
 
 	def _get_gamma(self, alpha, beta, chroma):
@@ -66,43 +81,58 @@ class HMM(object):
 		gamma1 = np.zeros((length, self.nstate))
 		for t in range(length):
 			gamma1[t, :] = (alpha[t] * beta[t]) / (alpha[t].dot(beta[t]))
-		
+		# print(np.sum(gamma1, axis=1))
+			
 		# gamma2
 		gamma2 = np.zeros((length-1, self.nstate, self.nstate))
+		s = np.zeros(length-1)
 		for t in range(length-1):
 			for j in range(self.nstate):
+				b = np.zeros(self.nstate)
+				for g in range(self.nstate):
+					b[g] = self._get_gaussian(chroma[:, t+1], g)
+				b /= np.sum(b)
 				for k in range(self.nstate):
-					gamma2[t, j, k] = alpha[t][j] * self.P[j, k] * self._get_gaussian(chroma[:, t+1], k) * beta[t+1][k]
-		for j in range(self.nstate):
-			for k in range(self.nstate):
-				gamma2[:, j, k] /= np.sum(np.sum(gamma2, axis=2), axis=1)
-
+					gamma2[t, j, k] = alpha[t][j] * self.P[j, k] * b[k] * beta[t+1][k]
+					s[t] += gamma2[t, j, k]
+					print("%d", t)
+					print(s[t])
+		for t in range(length-1):
+			gamma2[t, :, :] /= s[t]
+		print(gamma2)
 		return gamma1, gamma2		
 	
 		
 
 
 	def train(self, filename):
-		y, sr = librosa.load(filename, sr=11025)
-		chroma = librosa.feature.chroma_stft(y=y, sr=sr)  # (12, len)
+		y, sr = librosa.load(filename, sr=22050)
+		#print(y.shape)
+		chroma = librosa.feature.chroma_stft(y=y, sr=sr, n_fft=4096, hop_length=2048)  # (12, len)
+		#print(np.max(chroma))
 		fig, ax = plt.subplots()
 		img = librosa.display.specshow(chroma, y_axis='chroma', x_axis='time', ax=ax)
 		fig.colorbar(img, ax=ax)
 		ax.set(title='Chromagram')    
-		plt.show();
+		#plt.show();
 
 
 
 		norm, alpha = self._forward(chroma)
+		# print(alpha)
 		beta = self._backward(chroma, norm)
+		# print(beta)
 		gamma1, gamma2 = self._get_gamma(alpha, beta, chroma)
 		return gamma1, gamma2, chroma
 
 
 	def update(self, gamma1, gamma2, chroma):
 		_, length = np.shape(chroma)
+		# update pi
+		self.pi = gamma1[0, :]
+		
 		# update P
-		P = np.sum(gamma1, axis=0)
+		P = np.sum(gamma1[:gamma1.shape[0]-1, :], axis=0)
 		self.P = np.sum(gamma2, axis=0)
 		for i in range(self.nstate):
 			self.P[i, :] /= P[i]
@@ -127,10 +157,17 @@ def main():
 	P = np.random.rand(6, 6)
 	for i in range(6):
 		P[i, :] /= sum(P[i, :])
-	pi = np.array([0.5, 0.05, 0.05, 0.05, 0.05, 0.3])
+	#print(P)
+	#print(np.sum(P, axis=1))
+	pi = np.array([0.65, 0.05, 0.05, 0.05, 0.05, 0.15])
 	hmm = HMM(nstate=6, nfeature=12, P=P, pi=pi)
-	gamma1, gamma2, chroma = hmm.train("C_piano.wav")
-	hmm.update(gamma1, gamma2, chroma)
+	for it in range(1):
+		gamma1, gamma2, chroma = hmm.train("C_data.wav")
+		hmm.update(gamma1, gamma2, chroma)
+		print(np.sum(hmm.P, axis=1))
+		print(hmm.mean)
+		print(hmm.var)
+		print(hmm.pi)
 
 if __name__ == "__main__":
 	main()
