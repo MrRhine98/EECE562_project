@@ -2,7 +2,7 @@ import librosa
 import librosa.display
 import matplotlib.pyplot as plt
 import numpy as np
-
+from scipy.io import savemat
 
 class HMM(object):
 	def __init__(self, nstate, nfeature, P, pi):
@@ -55,7 +55,6 @@ class HMM(object):
 				beta[i, j] = np.sum(beta[i+1, :] * self.P[j, :] * B[i+1, :])
 			# normalize
 			beta[i, :] /= np.sum(beta[i, :])	
-		print(np.sum(beta, axis=1))
 		return beta	
 
 	def _get_gamma(self, alpha, beta, chroma):
@@ -76,7 +75,6 @@ class HMM(object):
 					s[t] += gamma2[t, j, k]
 		for t in range(length-1):
 			gamma2[t, :, :] /= s[t]
-		print(np.sum(np.sum(gamma2, axis=2), axis=1))
 		return gamma1, gamma2		
 	
 		
@@ -134,19 +132,22 @@ class HMM(object):
 		print(self.mean)
 
 
+	def save_theta(self):
+		theta_dic = {"pi": self.pi, "P": self.P, "var": self.var, "mean":self.mean}
+		savemat("theta.mat", theta_dic)
+
 
 def main():
 	P = np.random.rand(6, 6)
 	for i in range(6):
 		P[i, :] /= sum(P[i, :])
-	print(P)
-	print(np.sum(P, axis=1))
 	pi = np.array([0.65, 0.05, 0.05, 0.05, 0.05, 0.15])
 	hmm = HMM(nstate=6, nfeature=12, P=P, pi=pi)
-	for it in range(5):
+	for it in range(10):
 		gamma1, gamma2, chroma = hmm.train("C_data.wav")
 		hmm.update(gamma1, gamma2, chroma)
-	hmm.show_theta()	
+	hmm.show_theta()
+	hmm.save_theta()	
 
 
 if __name__ == "__main__":
