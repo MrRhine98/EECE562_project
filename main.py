@@ -5,11 +5,11 @@ import numpy as np
 from scipy.io import savemat
 
 class HMM(object):
-	def __init__(self, nstate, nfeature, P, pi):
+	def __init__(self, nstate, nfeature, P, pi, mean):
 		self.curstate = -1
 		self.nstate = nstate
 		self.nfeature = nfeature
-		self.mean = np.random.rand(nstate, nfeature)
+		self.mean = mean
 		self.var = np.random.rand(nfeature)
 		self.P = P
 		self.pi = pi
@@ -83,12 +83,12 @@ class HMM(object):
 	def train(self, filename):
 		y, sr = librosa.load(filename, sr=22050)
 		chroma = librosa.feature.chroma_stft(y=y, sr=sr, n_fft=4096, hop_length=2048)  # (12, len)
+		chroma = chroma[:, 2:]
 		fig, ax = plt.subplots()
 		img = librosa.display.specshow(chroma, y_axis='chroma', x_axis='time', ax=ax)
 		fig.colorbar(img, ax=ax)
 		ax.set(title='Chromagram')    
-
-		
+	
 		alpha = self._forward(chroma)
 		beta = self._backward(chroma)
 		gamma1, gamma2 = self._get_gamma(alpha, beta, chroma)
@@ -130,6 +130,9 @@ class HMM(object):
 		print(self.var)
 		print("******** mean ******")
 		print(self.mean)
+		c_major = [0, 2, 4, 5, 7, 9, 11]
+		for i in c_major:
+			print(self.mean[:, i])
 
 
 	def save_theta(self):
@@ -142,10 +145,19 @@ def main():
 	for i in range(6):
 		P[i, :] /= sum(P[i, :])
 	pi = np.array([0.65, 0.05, 0.05, 0.05, 0.05, 0.15])
-	hmm = HMM(nstate=6, nfeature=12, P=P, pi=pi)
-	for it in range(10):
-		gamma1, gamma2, chroma = hmm.train("C_data.wav")
-		hmm.update(gamma1, gamma2, chroma)
+	mean = np.array([[1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+			[0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0],
+			[0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1],
+			[1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0],
+			[0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+			[1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0]])
+	mean = mean * 0.8 + 0.1
+	hmm = HMM(nstate=6, nfeature=12, P=P, pi=pi, mean=mean)
+	for i in range(5):
+		for it in range(5):
+			filename = "C_data_" + str(it+1) + ".wav" 
+			gamma1, gamma2, chroma = hmm.train(filename)
+			hmm.update(gamma1, gamma2, chroma)
 	hmm.show_theta()
 	hmm.save_theta()	
 
